@@ -1,6 +1,7 @@
 package smarticulous;
 
 import smarticulous.db.Exercise;
+import smarticulous.db.Exercise.Question;
 import smarticulous.db.Submission;
 import smarticulous.db.User;
 
@@ -259,6 +260,10 @@ public class Smarticulous {
         if (db == null) {
             throw new SQLException("DB connection is not established.");
         }
+        // Do not allow empty usernames or passwords
+        if (user.username == null || user.username.trim().isEmpty() || password == null || password.trim().isEmpty()) {
+            return -1;
+        }
         // Insert or replace the user using their username, by the user table- Assumes
         // the Username is unique.
         String insertSql = "INSERT INTO User (Username, Firstname, Lastname, Password) " +
@@ -336,8 +341,44 @@ public class Smarticulous {
      * @throws SQLException
      */
     public int addExercise(Exercise exercise) throws SQLException {
-        // TODO: Implement
-        return -1;
+        // Initialize the id with -1 to indicate failure by default
+        int id = -1;
+
+        // SQL query to check if an exercise already exists with the given ID
+        String findSql = "SELECT EXISTS (SELECT 1 FROM Exercise WHERE ExerciseId = ?)";
+
+        try (PreparedStatement prpstmt = db.prepareStatement(findSql)) {
+            prpstmt.setInt(1, exercise.id);
+            try (ResultSet rs = prpstmt.executeQuery()) {
+                if (rs.next() && !rs.getBoolean(1)) { // Check if the exercise does not exist
+                    // SQL query to insert a new exercise
+                    String insertSql = "INSERT INTO Exercise (ExerciseId, Name, DueDate) VALUES (?, ?, ?)";
+
+                    try (PreparedStatement insertSt = db.prepareStatement(insertSql)) {
+                        insertSt.setInt(1, exercise.id);
+                        insertSt.setString(2, exercise.name);
+                        insertSt.setLong(3, exercise.dueDate.getTime());
+                        insertSt.executeUpdate();
+                        id = exercise.id; // Set id to the exercise ID indicating success
+                    }
+
+                    // Insert associated questions for the exercise
+                    for (Question question : exercise.questions) {
+                        String insertQuestion = "INSERT INTO Question (ExerciseId, Name, Desc, Points) VALUES (?, ?, ?, ?)";
+
+                        try (PreparedStatement prpQuestion = db.prepareStatement(insertQuestion)) {
+                            prpQuestion.setInt(1, exercise.id);
+                            prpQuestion.setString(2, question.name);
+                            prpQuestion.setString(3, question.desc);
+                            prpQuestion.setInt(4, question.points);
+                            prpQuestion.executeUpdate();
+                        }
+                    }
+                }
+            }
+        }
+        // Return the exercise ID if added successfully, or -1 if not
+        return id;
     }
 
     /**
@@ -349,8 +390,52 @@ public class Smarticulous {
      * @throws SQLException
      */
     public List<Exercise> loadExercises() throws SQLException {
-        // TODO: Implement
-        return null;
+        List<Exercise> exercises = new ArrayList<>();
+
+        // SQL command to retrieve all exercises ordered by their ID
+        String getExercisesSql = "SELECT * FROM Exercise ORDER BY ExerciseId ASC";
+        try (Statement stmt = db.createStatement(); ResultSet rsExercises = stmt.executeQuery(getExercisesSql)) {
+            while (rsExercises.next()) {
+                // Creating an Exercise object for each row in the result set
+                int exerciseId = rsExercises.getInt("ExerciseId");
+                Exercise exercise = new Exercise(
+                        exerciseId,
+                        rsExercises.getString("Name"),
+                        new Date(rsExercises.getLong("DueDate")));
+
+                // Attaching questions to the current exercise
+                attachQuestionsToExercise(exercise);
+                // Adding the Exercise to the list
+                exercises.add(exercise);
+            }
+        }
+        // Returns the list of exercises with their questions
+        return exercises;
+    }
+
+    /**
+     * Attaches questions to a given exercise by fetching them from the database.
+     * This method queries for all questions associated with the exercise's ID.
+     *
+     * @param exercise The Exercise to which the questions will be attached.
+     * @throws SQLException If any database access errors occur during the query
+     *                      execution.
+     */
+    private void attachQuestionsToExercise(Exercise exercise) throws SQLException {
+        // SQL query to retrieve questions related to a specific exercise
+        String getQuestionsSql = "SELECT Name, Desc, Points FROM Question WHERE ExerciseId = ?";
+        try (PreparedStatement prpstmt = db.prepareStatement(getQuestionsSql)) {
+            prpstmt.setInt(1, exercise.id); // Setting the exercise ID as the query parameter
+            try (ResultSet rsQuestions = prpstmt.executeQuery()) {
+                while (rsQuestions.next()) {
+                    // Adding each question to the Exercise
+                    exercise.addQuestion(
+                            rsQuestions.getString("Name"),
+                            rsQuestions.getString("Desc"),
+                            rsQuestions.getInt("Points"));
+                }
+            }
+        }
     }
 
     // ========== Submission Storage ===============
