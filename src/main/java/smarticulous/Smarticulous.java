@@ -451,8 +451,49 @@ public class Smarticulous {
      * @throws SQLException
      */
     public int storeSubmission(Submission submission) throws SQLException {
-        // TODO: Implement
-        return -1;
+        // Check if the corresponding user exists and get their UserId
+        String checkUserSql = "SELECT UserId FROM User WHERE UserName = ?";
+        try (PreparedStatement findUserStmt = db.prepareStatement(checkUserSql)) {
+            findUserStmt.setString(1, submission.user.username);
+            ResultSet userResult = findUserStmt.executeQuery();
+            if (!userResult.next() && userResult.getInt(1) == 0)
+                return -1; // Return -1 if the user does not exist
+
+            int userId = userResult.getInt("UserId"); // Retrieve the UserId
+            // Prepare SQL query for inserting the submission
+            String addSubmissionSql = submission.id != -1
+                    ? "INSERT INTO Submission (SubmissionId, UserId, ExerciseId, SubmissionTime) VALUES (?, ?, ?, ?)"
+                    : "INSERT INTO Submission (UserId, ExerciseId, SubmissionTime) VALUES (?, ?, ?)";
+
+            try (PreparedStatement addSubmissionStmt = db.prepareStatement(addSubmissionSql,
+                    PreparedStatement.RETURN_GENERATED_KEYS)) {
+                // Bind parameters to the prepared statement
+                if (submission.id != -1) {
+                    addSubmissionStmt.setInt(1, submission.id);
+                    addSubmissionStmt.setInt(2, userId);
+                    addSubmissionStmt.setInt(3, submission.exercise.id);
+                    addSubmissionStmt.setLong(4, submission.submissionTime.getTime());
+                } else {
+                    addSubmissionStmt.setInt(1, userId);
+                    addSubmissionStmt.setInt(2, submission.exercise.id);
+                    addSubmissionStmt.setLong(3, submission.submissionTime.getTime());
+                }
+
+                // Execute the insert operation
+                addSubmissionStmt.executeUpdate();
+
+                // Attempt to retrieve the generated submission ID, if applicable
+                if (submission.id == -1) {
+                    try (ResultSet generatedKeys = addSubmissionStmt.getGeneratedKeys()) {
+                        if (generatedKeys.next())
+                            return generatedKeys.getInt(1); // Return the new submission ID
+                    }
+                } else {
+                    return submission.id; // Return the provided submission ID
+                }
+            }
+        }
+        return -1; // Return -1 if failed to insert the submission or retrieve the ID
     }
 
     // ============= Submission Query ===============
@@ -477,8 +518,16 @@ public class Smarticulous {
      * @return
      */
     PreparedStatement getLastSubmissionGradesStatement() throws SQLException {
-        // TODO: Implement
-        return null;
+        String query = "SELECT s.SubmissionId, qg.QuestionId, qg.Grade, s.SubmissionTime " +
+                "FROM Submission s " +
+                "JOIN QuestionGrade qg ON s.SubmissionId = qg.SubmissionId " +
+                "JOIN Question q ON q.ExerciseId = s.ExerciseId AND qg.QuestionId = q.QuestionId " +
+                "JOIN User u ON u.UserId = s.UserId " +
+                "WHERE u.UserName = ? AND s.ExerciseId = ? " +
+                "ORDER BY s.SubmissionTime DESC, qg.QuestionId ASC " +
+                "LIMIT ?";
+        PreparedStatement prpstmt = db.prepareStatement(query);
+        return prpstmt;
     }
 
     /**
@@ -501,7 +550,6 @@ public class Smarticulous {
      *
      */
     PreparedStatement getBestSubmissionGradesStatement() throws SQLException {
-        // TODO: Implement
         return null;
     }
 
