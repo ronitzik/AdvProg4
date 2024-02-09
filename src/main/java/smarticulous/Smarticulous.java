@@ -255,7 +255,36 @@ public class Smarticulous {
      * @throws SQLException
      */
     public int addOrUpdateUser(User user, String password) throws SQLException {
-        // TODO: Implement
+        // Ensure the db connection is open
+        if (db == null) {
+            throw new SQLException("DB connection is not established.");
+        }
+        // Insert or replace the user using their username, by the user table- Assumes
+        // the Username is unique.
+        String insertSql = "INSERT INTO User (Username, Firstname, Lastname, Password) " +
+                "VALUES (?, ?, ?, ?) " +
+                "ON CONFLICT(Username) DO UPDATE SET " +
+                "Firstname = excluded.Firstname, " +
+                "Lastname = excluded.Lastname, " +
+                "Password = excluded.Password;";
+        ;
+        try (PreparedStatement prpstmt = db.prepareStatement(insertSql)) {
+            prpstmt.setString(1, user.username);
+            prpstmt.setString(2, user.firstname);
+            prpstmt.setString(3, user.lastname);
+            prpstmt.setString(4, password);
+            prpstmt.executeUpdate(); // Execute the insert or update operation
+        }
+        // Retrieve and return the UserId of the inserted or updated user
+        String idSql = "SELECT UserId FROM User WHERE Username=?";
+        try (PreparedStatement stmt = db.prepareStatement(idSql)) {
+            stmt.setString(1, user.username);
+            try (ResultSet newUserId = stmt.executeQuery()) {
+                if (newUserId.next()) {
+                    return newUserId.getInt("UserId"); // Return the user's ID
+                }
+            }
+        }
         return -1;
     }
 
@@ -275,8 +304,25 @@ public class Smarticulous {
      *      Passwords Properly</a>
      */
     public boolean verifyLogin(String username, String password) throws SQLException {
-        // TODO: Implement
-        return false;
+        // Check if the db connection is established
+        if (db == null) {
+            throw new SQLException("DB connection is not established.");
+        }
+
+        // SQL query to select the user with the given username and password
+        String query = "SELECT COUNT(*) FROM User WHERE Username = ? AND Password = ?";
+        try (PreparedStatement stmt = db.prepareStatement(query)) {
+            stmt.setString(1, username);
+            stmt.setString(2, password);
+
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                // Check if the user exists with the given username and password
+                int count = rs.getInt(1);
+                return count > 0; // true only if the user exists and the password matches, false otherwise
+            }
+        }
+        return false; // Return false if user not found or any error occurs
     }
 
     // =========== Exercise Management =============
